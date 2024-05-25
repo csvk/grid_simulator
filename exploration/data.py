@@ -17,8 +17,12 @@ class Data:
                 'raw': source.copy() if cols == None else source.copy()[cols]
             }            
 
-        if 'time' in self.df['raw'].columns:
-            self.df['raw']['time'] = [ x.replace(tzinfo=None) for x in self.df['raw']['time']]
+        try:
+            if 'time' in self.df['raw'].columns:
+                self.df['raw']['time'] = [x.replace(tzinfo=None) for x in self.df['raw']['time']]
+        except:
+            pass
+
         self.datalen = self.df['raw'].shape[0]
 
         with open(instruments, 'r') as f:
@@ -37,10 +41,10 @@ class Data:
         if cols == None:
             cols = self.df[source].columns
 
-        if start == None:
-            start = 0
-        if end == None:
-            end = self.datalen
+        # if start == None:
+        #     start = 0
+        # if end == None:
+        #     end = self.datalen
 
         assert end > start, f'start={start}, end={end} not valid'
 
@@ -54,12 +58,17 @@ class Data:
         for col, _type in cols.items():
             self.df[name][col] = pd.Series(dtype=_type) 
 
-    def prepare_fast_data(self, name: str, start: int, end: int, source: str='raw', cols: list=None, add_cols: dict=None):
+    def prepare_fast_data(self, name: str, start: int=None, end: int=None, source: str='raw', cols: list=None, add_cols: dict=None):
         '''Prepare data as an array for fast processing
         fcols = {col1: col1_index, col2: col2_index, .... }     
         fastdf = [array[col1], array[col2], array[col3], .... ]
         Accessed by: self.fdata()
         '''
+
+        if start == None:
+            start = 0
+        if end == None:
+            end = self.datalen
 
         self.prep_data(name=name, start=start, end=end, source=source, cols=cols)
         if add_cols:
@@ -98,4 +107,26 @@ class Data:
 
     def print_row(self, i: int):
         print(tabulate([[i] + [self.fastdf[self.fcols[col]][i] for col in self.fcols.keys()]], ['index']+ list(self.fcols.keys()), tablefmt='plain'))
+
+    def to_dict_of_dicts(self, column: str, keys: tuple, index: int):
+        '''Convert dict of tuples to dict of dicts
+        {1: (...), 2: (...)} to {1: {}, 2: {}}
+        '''
+        if type(self.fastdf[self.fcols[column]][index]) == str:
+            data = eval(self.fastdf[self.fcols[column]][index])
+        elif type(self.fastdf[self.fcols[column]][index]) == dict:
+            data = self.fastdf[self.fcols[column]][index]
+        else:
+            data = dict()
+        dict_of_dicts = dict()
+        for k, values in data.items():
+            dict_of_dicts[k] = dict()
+            for i in range(len(values)):
+                dict_of_dicts[k][keys[i]] = values[i]
+        return dict_of_dicts
+
+                
+
+
+
 
