@@ -2,7 +2,6 @@ from data import Data
 from tqdm import tqdm
 import pandas as pd
 
-
 class GridSimulator:
 
     EVENT_TP, EVENT_SL, EVENT_MC, EVENT_ENTRY, EVENT_COVER,  = 'TP', 'SL', 'MC', 'ENT', 'COV'
@@ -39,7 +38,7 @@ class GridSimulator:
         self.grid_pips = grid_pips
         self.sl_grid_count = sl_grid_count
         self.sl_pips = grid_pips * sl_grid_count
-        self.total_covers = int(self.sl_grid_count - self.sl_grid_count / 2 + 1)
+        self.total_covers = self.sl_grid_count - 1
         self.sizing_ratio = init_trade_size / init_bal
         self.notrade_margin_percent = notrade_margin_percent
         self.notrade_count = notrade_count
@@ -358,8 +357,8 @@ class GridSimulator:
 
     def cover_triggers(self, trigger_price: float, parent: int):
         covers = dict()
-        csl_pips = self.grid_pips * (self.sl_grid_count / 2 - 1)
-        cover_grid_count = self.sl_grid_count / 2 - 1
+        csl_pips = self.grid_pips
+        cover_grid_count = 1
         for _ in range(self.total_covers):
             csl_pips = self.grid_pips * cover_grid_count
             if parent == self.LONG:
@@ -411,7 +410,7 @@ class GridSimulator:
                     # CSL=long_csl,
                     TSL=0,
                     PAR=0,
-                    COVS=self.cover_triggers(self.next_up_grid, self.LONG)
+                    COVS=self.cover_triggers(trigger, self.LONG)
                     # REM_COVS=self.total_covers
                 )
                 # (trade_size, self.d.fdata('ask_c', self.i), self.next_up_grid, long_tp, long_sl, 0, long_csl, list(), self.total_covers) # (SIZE, ENTRY, TP, SL, TSL, CSL, COVS, REM_COVS)
@@ -425,7 +424,7 @@ class GridSimulator:
                     # CSL=short_csl,
                     TSL=0,
                     PAR=0,
-                    COVS=self.cover_triggers(self.next_down_grid, self.SHORT)
+                    COVS=self.cover_triggers(trigger, self.SHORT)
                     # REM_COVS=self.total_covers
                 )
                 self.update_open_longs(open_longs)
@@ -437,100 +436,6 @@ class GridSimulator:
             self.next_up_grid = long_tp
             self.next_down_grid = short_tp  
 
-    def cover_entry_old(self):
-        open_longs = self.get_open_longs()
-        open_shorts = self.get_open_shorts()
-
-        csl_pips = self.grid_pips * (self.sl_grid_count / 2 - 1)
-
-        # Long cover entries
-        for trade_no, trade in open_shorts.items():
-            if self.d.fdata('mid_c', self.i) >= trade['CSL']:
-                net_bal, margin_used = self.current_ac_values()
-                allowed_trade_size = max(0, (net_bal / self.notrade_margin_percent - margin_used) / float(self.d.ticker['marginRate']))
-
-                if trade['REM_COVS'] > 0:
-                    if allowed_trade_size < trade['SIZE']:
-                        self.update_events(self.EVENT_COV_FAIL)
-                    else:
-                        self.trade_no = self.trade_no + 1
-                        long_tp = trade['SL']
-                        # long_sl = round(self.d.fdata('mid_c', self.i) - self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                        long_sl = round(trade['ENT'] - trade['REM_COVS'] * self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                        # long_csl = round(self.d.fdata('mid_c', self.i) - csl_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                        long_csl = round(trade['CSL'] - csl_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                        # open_longs[self.trade_no] = (trade['SIZE'], self.d.fdata('ask_c', self.i), trade['CSL'], long_tp, long_sl, 0, long_csl, list(), self.total_covers) # (SIZE, ENTRY, TP, SL, TSL, CSL, COVS, REM_COVS)
-                        open_longs[self.trade_no] = dict(
-                            SIZE=trade['SIZE'],
-                            TRIG=trade['CSL'],
-                            ENT=self.d.fdata('ask_c', self.i),
-                            TP=long_tp,
-                            SL=long_sl,
-                            CSL=long_csl,
-                            TSL=0,
-                            PAR=trade_no,
-                            COVS=list(),
-                            REM_COVS=self.total_covers
-                        )
-                        self.update_open_longs(open_longs)
-                        
-                        self.update_temp_ac_values()
-                        self.update_events(self.EVENT_COVER)
-
-                        # Update open short position: Update cover stop loss & Reduce remaining covers
-                        short_csl = round(trade['CSL'] + self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                        # covers = trade['COVS']
-                        # covers.append(self.trade_no)
-                        # open_shorts[trade_no] = (trade['SIZE'], trade['ENT'], trade['TRIG'], trade['TP'], trade['SL'], trade['TSL'], short_csl, covers, trade['REM_COVS'] - 1)
-                        open_shorts[trade_no]['CSL'] = short_csl
-                        open_shorts[trade_no]['COVS'].append(self.trade_no)
-                        open_shorts[trade_no]['REM_COVS'] = open_shorts[trade_no]['REM_COVS'] - 1
-                        self.update_open_shorts(open_shorts)
-
-        # Short cover entries
-        for trade_no, trade in open_longs.items():
-            if self.d.fdata('mid_c', self.i) <= trade['CSL']:
-                net_bal, margin_used = self.current_ac_values()
-                allowed_trade_size = max(0, (net_bal / self.notrade_margin_percent - margin_used) / float(self.d.ticker['marginRate']))
-
-                if trade['REM_COVS'] > 0:
-                    if allowed_trade_size < trade['SIZE']:
-                        self.update_events(self.EVENT_COV_FAIL)
-                    else:
-                        self.trade_no = self.trade_no + 1
-                        short_tp = trade['SL']
-                        # short_sl = round(self.d.fdata('mid_c', self.i) + self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                        short_sl = round(trade['ENT'] + trade['REM_COVS'] * self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                        # short_csl = round(self.d.fdata('mid_c', self.i) + csl_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                        short_csl = round(trade['CSL'] + csl_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                        # open_shorts[self.trade_no] = (trade['SIZE'], self.d.fdata('bid_c', self.i), trade['CSL'], short_tp, short_sl, 0, short_csl, list(), self.total_covers) # (SIZE, ENTRY, TP, SL, TSL, CSL, COVS, REM_COVS)
-                        open_shorts[self.trade_no] = dict(
-                            SIZE=trade['SIZE'],
-                            TRIG=trade['CSL'],
-                            ENT=self.d.fdata('bid_c', self.i),
-                            TP=short_tp,
-                            SL=short_sl,
-                            CSL=short_csl,
-                            TSL=0,
-                            PAR=trade_no,
-                            COVS=list(),
-                            REM_COVS=self.total_covers
-                        )
-                        self.update_open_shorts(open_shorts)
-                        
-                        self.update_temp_ac_values()
-                        self.update_events(self.EVENT_COVER)
-
-                        # Update open long position: Update cover stop loss & Reduce remaining covers
-                        long_csl = round(trade['CSL'] - self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                        # covers = trade['COVS']
-                        # covers.append(self.trade_no)
-                        # open_longs[trade_no] = (trade['SIZE'], trade['ENT'], trade['TRIG'], trade['TP'], trade['SL'], trade['TSL'], long_csl, covers, trade['REM_COVS'] - 1)
-                        open_longs[trade_no]['CSL'] = long_csl
-                        open_longs[trade_no]['COVS'].append(self.trade_no)
-                        open_longs[trade_no]['REM_COVS'] = open_longs[trade_no]['REM_COVS'] - 1
-                        self.update_open_longs(open_longs)
-
     def cover_entry(self):
         open_longs = self.get_open_longs()
         open_shorts = self.get_open_shorts()
@@ -540,7 +445,7 @@ class GridSimulator:
         # Long cover entries
         for trade_no, trade in open_shorts.items():
             for csl, cov_trade_no in trade['COVS'].items():
-                if self.d.fdata('mid_c', self.i) >= csl and cov_trade_no == 0:
+                if self.d.fdata('mid_c', self.i-1) < csl and self.d.fdata('mid_c', self.i) >= csl and cov_trade_no == 0:
                     if self.notrade_margin_percent is not None and self.notrade_type in ['all', 'cover']:
                         net_bal, margin_used = self.current_ac_values()
                         allowed_trade_size = max(0, (net_bal / self.notrade_margin_percent - margin_used) / float(self.d.ticker['marginRate']))
@@ -552,10 +457,11 @@ class GridSimulator:
                         self.update_events(self.EVENT_COV_FAIL)
                     else:
                         self.trade_no = self.trade_no + 1
-                        long_tp = trade['SL']
+                        # long_tp = trade['SL']
+                        long_tp = round(csl + 2 * self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5) 
                         # long_sl = round(self.d.fdata('mid_c', self.i) - self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # long_sl = round(trade['ENT'] - trade['REM_COVS'] * self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                        long_sl = round(csl - self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
+                        long_sl = round(csl - 2 * self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # long_csl = round(self.d.fdata('mid_c', self.i) - csl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # long_csl = round(csl - csl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # open_longs[self.trade_no] = (trade['SIZE'], self.d.fdata('ask_c', self.i), trade['CSL'], long_tp, long_sl, 0, long_csl, list(), self.total_covers) # (SIZE, ENTRY, TP, SL, TSL, CSL, COVS, REM_COVS)
@@ -583,7 +489,7 @@ class GridSimulator:
         # Short cover entries
         for trade_no, trade in open_longs.items():
             for csl, cov_trade_no in trade['COVS'].items():
-                if self.d.fdata('mid_c', self.i) <= csl and cov_trade_no == 0:
+                if self.d.fdata('mid_c', self.i-1) > csl and self.d.fdata('mid_c', self.i) <= csl and cov_trade_no == 0:
                     if self.notrade_margin_percent is not None and self.notrade_type in ['all', 'cover']:
                         net_bal, margin_used = self.current_ac_values()
                         allowed_trade_size = max(0, (net_bal / self.notrade_margin_percent - margin_used) / float(self.d.ticker['marginRate']))
@@ -595,10 +501,11 @@ class GridSimulator:
                         self.update_events(self.EVENT_COV_FAIL)
                     else:
                         self.trade_no = self.trade_no + 1
-                        short_tp = trade['SL']
+                        # short_tp = trade['SL']
+                        short_tp = round(csl - 2 * self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5) 
                         # short_sl = round(self.d.fdata('mid_c', self.i) + self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # short_sl = round(trade['ENT'] + trade['REM_COVS'] * self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                        short_sl = round(csl + self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
+                        short_sl = round(csl + 2 * self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # short_csl = round(self.d.fdata('mid_c', self.i) + csl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # short_csl = round(trade['CSL'] + csl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # open_shorts[self.trade_no] = (trade['SIZE'], self.d.fdata('bid_c', self.i), trade['CSL'], short_tp, short_sl, 0, short_csl, list(), self.total_covers) # (SIZE, ENTRY, TP, SL, TSL, CSL, COVS, REM_COVS)
@@ -625,14 +532,11 @@ class GridSimulator:
 
     def unlink_parent(self, closed_trade: dict, direction: int):
         adjusted = False
-        # Update TP
         if direction == self.LONG:
             open_longs = self.get_open_longs()
             for _, trade_no in closed_trade['COVS'].items():
                 if trade_no > 0:
-                    # trade = open_longs[trade_no]
                     long_tp = round(open_longs[trade_no]['TRIG'] + self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                    # open_longs[self.trade_no] = (trade['SIZE'], trade['ENT'], trade['TRIG'], long_tp, trade['SL'], trade['TSL'], trade['CSL'], trade['COVS'], trade['REM_COVS']) # (SIZE, ENTRY, TP, SL, TSL, CSL, COVS, REM_COVS)
                     open_longs[trade_no]['TP'] = long_tp
                     open_longs[trade_no]['PAR'] = 0
                     self.update_open_longs(open_longs)
@@ -641,9 +545,7 @@ class GridSimulator:
             open_shorts = self.get_open_shorts()
             for _, trade_no in closed_trade['COVS'].items():
                 if trade_no > 0:
-                    # trade = open_shorts[trade_no]
                     short_tp = round(open_shorts[trade_no]['TRIG'] - self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5) 
-                    # open_shorts[self.trade_no] = (trade['SIZE'], trade['ENT'], trade['TRIG'], short_tp, trade['SL'], trade['TSL'], trade['CSL'], trade['COVS'], trade['REM_COVS']) # (SIZE, ENTRY, TP, SL, TSL, CSL, COVS, REM_COVS)
                     open_shorts[trade_no]['TP'] = short_tp
                     open_shorts[trade_no]['PAR'] = 0
                     self.update_open_shorts(open_shorts)
@@ -652,7 +554,7 @@ class GridSimulator:
         if adjusted:
             # self.update_temp_ac_values()
             self.update_events(self.EVENT_PAR_UNLINK)
-
+    
     def unlink_cover(self, closed_trade_no: int, parent_trade_no: int, direction: int):
         adjusted = False
         # Unlink closed cover in parent
@@ -685,6 +587,8 @@ class GridSimulator:
             if self.d.fdata('mid_c', self.i) >= trade['TP']:
                 self.close_long(trade_no)
                 self.unlink_parent(trade, self.SHORT)
+                if trade['PAR'] != 0:
+                    self.unlink_cover(trade_no, trade['PAR'], self.SHORT)
                 traded = True
 
         # Close short positions take profit
@@ -693,6 +597,8 @@ class GridSimulator:
             if self.d.fdata('mid_c', self.i) <= trade['TP']:
                 self.close_short(trade_no)
                 self.unlink_parent(trade, self.LONG)
+                if trade['PAR'] != 0:
+                    self.unlink_cover(trade_no, trade['PAR'], self.LONG)
                 traded = True
 
         if traded:
@@ -708,6 +614,7 @@ class GridSimulator:
                 self.close_long(trade_no)
                 # self.cover_sl_direction = self.SHORT
                 # self.update_uncovered_trades(trade_no, self.EVENT_SL)
+                self.unlink_parent(trade, self.SHORT)
                 if trade['PAR'] != 0:
                     self.unlink_cover(trade_no, trade['PAR'], self.SHORT)
                 traded = True
@@ -719,6 +626,7 @@ class GridSimulator:
                 self.close_short(trade_no)
                 # self.cover_sl_direction = self.LONG
                 # self.update_uncovered_trades(trade_no, self.EVENT_SL)
+                self.unlink_parent(trade, self.LONG)
                 if trade['PAR'] != 0:
                     self.unlink_cover(trade_no, trade['PAR'], self.LONG)
                 traded = True

@@ -1,6 +1,7 @@
 import pandas as pd
 import json
 from tabulate import tabulate
+from copy import deepcopy
 
 
 class Data:
@@ -84,18 +85,19 @@ class Data:
         '''Pass rows=-1 if all rows need to be returned
         '''
         if column is None:
-            return self.fastdf
+            fdata = self.fastdf
         if index is None:
-            return self.fastdf[self.fcols[column]]
+            fdata = self.fastdf[self.fcols[column]]
         else:
             if rows is not None:
                 if rows >= 0:
                     rows = min(rows, self.fdatalen - index)
-                    return self.fastdf[self.fcols[column]][index:index+rows]
+                    fdata = self.fastdf[self.fcols[column]][index:index+rows]
                 else:
-                    return self.fastdf[self.fcols[column]][index:]
+                    fdata = self.fastdf[self.fcols[column]][index:]
             else:
-                return self.fastdf[self.fcols[column]][index]
+                fdata = self.fastdf[self.fcols[column]][index]
+        return deepcopy(fdata)
         
     def update_fdata(self, column: str, index: int=None, value: float=None):
         if index is None:
@@ -123,7 +125,7 @@ class Data:
             dict_of_dicts[k] = dict()
             for i in range(len(values)):
                 dict_of_dicts[k][keys[i]] = values[i]
-        return dict_of_dicts
+        return deepcopy(dict_of_dicts)
 
                 
 
