@@ -13,6 +13,7 @@ class GridSimulator:
     # SIZE, ENTRY, TRIGGER, TP, SL, TSL, CSL, COVS, REM_COVS = 0, 1, 2, 3, 4, 5, 6, 7, 8
     # EXIT, PIPS = 2, 3
     LONG, SHORT = 1, -1
+    NEW, COVER = 0 , 1
     MC_PERCENT = 0.50
 
     def __init__(
@@ -26,8 +27,8 @@ class GridSimulator:
             grid_pips: int,
             sl_grid_count: int,
             notrade_margin_percent: float,
-            notrade_count: int,
-            notrade_type: str,
+            notrade_count: tuple,
+            tp_factor: str,
             sizing: str,
             cash_out_factor: float,
             trailing_sl: float):
@@ -42,7 +43,7 @@ class GridSimulator:
         self.sizing_ratio = init_trade_size / init_bal
         self.notrade_margin_percent = notrade_margin_percent
         self.notrade_count = notrade_count
-        self.notrade_type = notrade_type
+        self.tp_factor = tp_factor
         self.sizing = sizing
         self.cash_out_factor = cash_out_factor
         self.trailing_sl = trailing_sl
@@ -298,10 +299,10 @@ class GridSimulator:
         else:
             net_bal, margin_used = self.current_ac_values()
             trade_size = int(net_bal * self.sizing_ratio) if self.sizing == 'dynamic' else self.init_trade_size
-            if self.notrade_margin_percent is not None and self.notrade_type in ['all', 'new']:
+            if self.notrade_margin_percent is not None and self.notrade_count[self.NEW] is not None:
                 allowed_trade_size = max(0, (net_bal / self.notrade_margin_percent - margin_used) / (2 * float(self.d.ticker['marginRate'])))
                 trade_size = int(min(trade_size, allowed_trade_size))
-            if self.notrade_count is not None and self.notrade_count < self.d.fdata('open_long_count', self.i) + self.d.fdata('open_short_count', self.i) and self.notrade_type in ['all', 'new']:
+            if self.notrade_count[self.NEW] is not None and self.notrade_count[self.NEW] < self.d.fdata('open_long_count', self.i) + self.d.fdata('open_short_count', self.i):
                 trade_size = 0
         return trade_size
     
@@ -446,22 +447,22 @@ class GridSimulator:
         for trade_no, trade in open_shorts.items():
             for csl, cov_trade_no in trade['COVS'].items():
                 if self.d.fdata('mid_c', self.i-1) < csl and self.d.fdata('mid_c', self.i) >= csl and cov_trade_no == 0:
-                    if self.notrade_margin_percent is not None and self.notrade_type in ['all', 'cover']:
+                    if self.notrade_margin_percent is not None and self.notrade_count[self.COVER] is not None:
                         net_bal, margin_used = self.current_ac_values()
                         allowed_trade_size = max(0, (net_bal / self.notrade_margin_percent - margin_used) / float(self.d.ticker['marginRate']))
                     else:
                         allowed_trade_size = 0
                     if self.notrade_margin_percent is not None and allowed_trade_size < trade['SIZE']:
                         self.update_events(self.EVENT_COV_FAIL)
-                    elif self.notrade_count is not None and self.notrade_count < self.d.fdata('open_long_count', self.i) + self.d.fdata('open_short_count', self.i) and self.notrade_type in ['all', 'cover']:
+                    elif self.notrade_count[self.COVER] is not None and self.notrade_count[self.COVER] < self.d.fdata('open_long_count', self.i) + self.d.fdata('open_short_count', self.i):
                         self.update_events(self.EVENT_COV_FAIL)
                     else:
                         self.trade_no = self.trade_no + 1
                         # long_tp = trade['SL']
-                        long_tp = round(csl + 2 * self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5) 
+                        long_tp = round(csl + self.tp_factor * self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5) 
                         # long_sl = round(self.d.fdata('mid_c', self.i) - self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # long_sl = round(trade['ENT'] - trade['REM_COVS'] * self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                        long_sl = round(csl - 2 * self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
+                        long_sl = round(csl - self.tp_factor * self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # long_csl = round(self.d.fdata('mid_c', self.i) - csl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # long_csl = round(csl - csl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # open_longs[self.trade_no] = (trade['SIZE'], self.d.fdata('ask_c', self.i), trade['CSL'], long_tp, long_sl, 0, long_csl, list(), self.total_covers) # (SIZE, ENTRY, TP, SL, TSL, CSL, COVS, REM_COVS)
@@ -490,22 +491,22 @@ class GridSimulator:
         for trade_no, trade in open_longs.items():
             for csl, cov_trade_no in trade['COVS'].items():
                 if self.d.fdata('mid_c', self.i-1) > csl and self.d.fdata('mid_c', self.i) <= csl and cov_trade_no == 0:
-                    if self.notrade_margin_percent is not None and self.notrade_type in ['all', 'cover']:
+                    if self.notrade_margin_percent is not None and self.notrade_count[self.COVER] is not None:
                         net_bal, margin_used = self.current_ac_values()
                         allowed_trade_size = max(0, (net_bal / self.notrade_margin_percent - margin_used) / float(self.d.ticker['marginRate']))
                     else:
                         allowed_trade_size = 0
                     if self.notrade_margin_percent is not None and allowed_trade_size < trade['SIZE']:
                         self.update_events(self.EVENT_COV_FAIL)
-                    elif self.notrade_count is not None and self.notrade_count < self.d.fdata('open_long_count', self.i) + self.d.fdata('open_short_count', self.i) and self.notrade_type in ['all', 'cover']:
+                    elif self.notrade_count[self.COVER] is not None and self.notrade_count[self.COVER] < self.d.fdata('open_long_count', self.i) + self.d.fdata('open_short_count', self.i):
                         self.update_events(self.EVENT_COV_FAIL)
                     else:
                         self.trade_no = self.trade_no + 1
                         # short_tp = trade['SL']
-                        short_tp = round(csl - 2 * self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5) 
+                        short_tp = round(csl - self.tp_factor * self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5) 
                         # short_sl = round(self.d.fdata('mid_c', self.i) + self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # short_sl = round(trade['ENT'] + trade['REM_COVS'] * self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                        short_sl = round(csl + 2 * self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
+                        short_sl = round(csl + self.tp_factor * self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # short_csl = round(self.d.fdata('mid_c', self.i) + csl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # short_csl = round(trade['CSL'] + csl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # open_shorts[self.trade_no] = (trade['SIZE'], self.d.fdata('bid_c', self.i), trade['CSL'], short_tp, short_sl, 0, short_csl, list(), self.total_covers) # (SIZE, ENTRY, TP, SL, TSL, CSL, COVS, REM_COVS)

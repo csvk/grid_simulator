@@ -19,7 +19,7 @@ class GridOptimizer:
             sl_grid_count: list,
             notrade_margin_percent: list,
             notrade_count: list,
-            notrade_type: list,
+            tp_factor: list,
             sizing: list,
             cash_out_factor: list,
             trailing_sl: list,
@@ -43,7 +43,7 @@ class GridOptimizer:
         self.sl_grid_count = sl_grid_count
         self.notrade_margin_percent = notrade_margin_percent
         self.notrade_count = notrade_count
-        self.notrade_type = notrade_type
+        self.tp_factor = tp_factor
         self.sizing = sizing
         self.cash_out_factor = cash_out_factor
         self.trailing_sl= trailing_sl
@@ -68,7 +68,7 @@ class GridOptimizer:
                 sl_grid_count = self.sl_grid_count,
                 notrade_margin_percent = self.notrade_margin_percent,
                 notrade_count = self.notrade_count,
-                notrade_type = self.notrade_type,
+                tp_factor = self.tp_factor,
                 sizing = self.sizing,
                 cash_out_factor = self.cash_out_factor,
                 trailing_sl = self.trailing_sl,
@@ -100,8 +100,8 @@ class GridOptimizer:
                     grid_pips: int,
                     sl_grid_count: int,
                     notrade_margin_percent: float,
-                    notrade_count: int,
-                    notrade_type: str,
+                    notrade_count: tuple,
+                    tp_factor: str,
                     sizing: str,
                     cash_out_factor: float,
                     trailing_sl: float):
@@ -119,7 +119,7 @@ class GridOptimizer:
             sl_grid_count=sl_grid_count,
             notrade_margin_percent=notrade_margin_percent,
             notrade_count=notrade_count,
-            notrade_type=notrade_type,
+            tp_factor=tp_factor,
             sizing=sizing,
             cash_out_factor=cash_out_factor,
             trailing_sl=trailing_sl
@@ -128,8 +128,8 @@ class GridOptimizer:
         def inputs_list():
             gross_bal = self.sim.d.df[self.sim.name].iloc[-1]['gross_bal']
             start, end = self.sim.d.df[self.sim.name].iloc[0]['time'], self.sim.d.df[self.sim.name].iloc[-1]['time']
-            header = ['sim_name', 'start', 'end', 'init_bal', 'init_trade_size', 'grid_pips', 'sl_grid_count', 'stoploss_pips', 'notrade_margin_percent', 'notrade_count', 'notrade_type', 'sizing', 'cash_out_factor', 'trailing_sl', 'gross_bal']
-            inputs = [sim_name, start, end, init_bal, init_trade_size, grid_pips, sl_grid_count, grid_pips * sl_grid_count, notrade_margin_percent, notrade_count, notrade_type, sizing, cash_out_factor, trailing_sl, gross_bal]
+            header = ['sim_name', 'start', 'end', 'init_bal', 'init_trade_size', 'grid_pips', 'sl_grid_count', 'stoploss_pips', 'notrade_margin_percent', 'notrade_count', 'tp_factor', 'sizing', 'cash_out_factor', 'trailing_sl', 'gross_bal']
+            inputs = [sim_name, start, end, init_bal, init_trade_size, grid_pips, sl_grid_count, grid_pips * sl_grid_count, notrade_margin_percent, notrade_count, tp_factor, sizing, cash_out_factor, trailing_sl, gross_bal]
             print(tabulate([inputs], header, tablefmt='plain'))
             self.inputs_list.append(inputs)
             return pd.DataFrame(self.inputs_list, columns=header)
@@ -154,7 +154,7 @@ class GridOptimizer:
                                 for c in self.cash_out_factor:
                                     for ntsp in self.notrade_margin_percent:
                                         for ntc in self.notrade_count:
-                                            for ntt in self.notrade_type:
+                                            for tf in self.tp_factor:
                                                 for slgc in self.sl_grid_count:
                                                     for tsl in self.trailing_sl:
                                                         if self.counter >= self.checkpoint:
@@ -169,7 +169,7 @@ class GridOptimizer:
                                                                     sl_grid_count=slgc,
                                                                     notrade_margin_percent=ntsp,
                                                                     notrade_count=ntc,
-                                                                    notrade_type=ntt,
+                                                                    tp_factor=tf,
                                                                     sizing=s,
                                                                     cash_out_factor=c,
                                                                     trailing_sl=tsl
