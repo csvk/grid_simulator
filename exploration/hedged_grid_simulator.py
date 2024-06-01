@@ -39,7 +39,7 @@ class GridSimulator:
         self.grid_pips = grid_pips
         self.sl_grid_count = sl_grid_count
         self.sl_pips = grid_pips * sl_grid_count
-        self.total_covers = self.sl_grid_count - 1
+        self.total_covers = self.sl_grid_count #- 1
         self.sizing_ratio = init_trade_size / init_bal
         self.notrade_margin_percent = notrade_margin_percent
         self.notrade_count = notrade_count
@@ -444,11 +444,16 @@ class GridSimulator:
         # csl_pips = self.grid_pips * (self.sl_grid_count / 2 - 1)
 
         # Long cover entries
+        # long_covers = dict()
+        # tot_long_cover_trade_size = 0
         for trade_no, trade in open_shorts.items():
             for csl, cov_trade_no in trade['COVS'].items():
                 if self.d.fdata('mid_c', self.i-1) < csl and self.d.fdata('mid_c', self.i) >= csl and cov_trade_no == 0:
+                    trade_size = self.calc_trade_size()
                     if self.notrade_margin_percent is not None and self.notrade_count[self.COVER] is not None:
                         net_bal, margin_used = self.current_ac_values()
+                        # required_margin = tot_long_cover_trade_size * float(self.d.ticker['marginRate'])
+                        # allowed_trade_size = max(0, (net_bal / self.notrade_margin_percent - (margin_used + required_margin)) / float(self.d.ticker['marginRate']))
                         allowed_trade_size = max(0, (net_bal / self.notrade_margin_percent - margin_used) / float(self.d.ticker['marginRate']))
                     else:
                         allowed_trade_size = 0
@@ -467,7 +472,7 @@ class GridSimulator:
                         # long_csl = round(csl - csl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # open_longs[self.trade_no] = (trade['SIZE'], self.d.fdata('ask_c', self.i), trade['CSL'], long_tp, long_sl, 0, long_csl, list(), self.total_covers) # (SIZE, ENTRY, TP, SL, TSL, CSL, COVS, REM_COVS)
                         open_longs[self.trade_no] = dict(
-                            SIZE=trade['SIZE'],
+                            SIZE= 2*trade_size, #trade['SIZE'],
                             TRIG=csl,
                             ENT=self.d.fdata('ask_c', self.i),
                             TP=long_tp,
@@ -490,6 +495,7 @@ class GridSimulator:
         # Short cover entries
         for trade_no, trade in open_longs.items():
             for csl, cov_trade_no in trade['COVS'].items():
+                trade_size = self.calc_trade_size()
                 if self.d.fdata('mid_c', self.i-1) > csl and self.d.fdata('mid_c', self.i) <= csl and cov_trade_no == 0:
                     if self.notrade_margin_percent is not None and self.notrade_count[self.COVER] is not None:
                         net_bal, margin_used = self.current_ac_values()
@@ -511,7 +517,7 @@ class GridSimulator:
                         # short_csl = round(trade['CSL'] + csl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                         # open_shorts[self.trade_no] = (trade['SIZE'], self.d.fdata('bid_c', self.i), trade['CSL'], short_tp, short_sl, 0, short_csl, list(), self.total_covers) # (SIZE, ENTRY, TP, SL, TSL, CSL, COVS, REM_COVS)
                         open_shorts[self.trade_no] = dict(
-                            SIZE=trade['SIZE'],
+                            SIZE=2*trade_size, # trade['SIZE'],
                             TRIG=csl,
                             ENT=self.d.fdata('bid_c', self.i),
                             TP=short_tp,
@@ -751,15 +757,20 @@ class GridSimulator:
                 self.update_init_values()
             else:
                 self.update_temp_ac_values(init=True)
+                self.margin_call()
+                # self.cash_transfer()
+                # up_grid = self.d.fdata('mid_c', self.i) >= self.next_up_grid 
+                # down_grid = self.d.fdata('mid_c', self.i) <= self.next_down_grid
+                # if up_grid or down_grid:
                 if self.trailing_sl:
                     self.update_trailing_sl()
-                self.margin_call()
+                self.cover_entry()
                 self.stop_loss()
                 if self.trailing_sl:
                     self.take_profit_tsl()
                 else:
                     self.take_profit()
                 self.cash_transfer()
-            self.cover_entry()
-            self.entry()
+                # self.cover_entry()
+                self.entry()
             self.update_ac_values()

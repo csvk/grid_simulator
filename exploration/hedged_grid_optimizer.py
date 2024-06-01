@@ -83,12 +83,35 @@ class GridOptimizer:
         df = pd.read_pickle(f"{self.data_path}{ticker}_{frequency}.pkl")
         return df
     
+    def to_dict(self, data):
+        if type(data) == str:
+            data = eval(data)
+        elif type(data) == dict:
+            data = data
+        else:
+            data = dict()
+        return data
+    
+    def trade_no_only(self, result: pd.DataFrame):
+        trade_nos = lambda x: tuple(self.to_dict(x).keys())
+        result.open_longs = result.open_longs.apply(trade_nos)
+        result.open_shorts = result.open_shorts.apply(trade_nos)
+        result.closed_longs = result.closed_longs.apply(trade_nos)
+        result.closed_shorts = result.closed_shorts.apply(trade_nos)
+        return result
+    
     def save_files(self, inputs_df, ticker, frequency):
         result = self.sim.d.df[self.sim.name].copy()
         if 'events' in self.records:
             result[~result.events.isnull()].to_csv(f'{self.out_path}{self.sim.name}-events.csv', index=False)
+            result = self.trade_no_only(result)
+            result[~result.events.isnull()].to_csv(f'{self.out_path}{self.sim.name}-events.less-details.csv', index=False)
+            
         if 'all' in self.records:
             result.to_csv(f'{self.out_path}{self.sim.name}-all.csv', index=False)
+            result = self.trade_no_only(result)
+            result.to_csv(f'{self.out_path}{self.sim.name}-all.less-details.csv', index=False)
+            
         inputs_df.to_csv(f'{self.out_path}{ticker}-{frequency}-' + self.inputs_file, index=False)
 
     def process_sim(self, 

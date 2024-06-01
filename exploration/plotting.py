@@ -58,7 +58,7 @@ class CandlePlot:
                 x=self.df_plot.sTime,
                 y=self.df_plot[t],
                 line=dict(width=2),
-                line_shape="spline",
+                line_shape="linear", # "spline"
                 name=t
             ), secondary_y=is_sec)
 
