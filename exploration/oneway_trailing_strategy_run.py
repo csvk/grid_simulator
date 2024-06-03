@@ -1,27 +1,27 @@
 from variable_grid_optimizer import GridOptimizer
 
 data_path = '../data/'
-out_path = 'D:/Trading/ml4t-data/variable-grid/'
+out_path = 'D:/Trading/ml4t-data/one-grid/'
 instruments = "../data/instruments.json"
 
 dummyrun = False
 checkpoint=0
-counter=45
+counter=1
 inputs_file=f'inputs.{counter}.csv'
-start=0
-end=50000
+start=None
+end=None
 records=['events']
 tickers=['EUR_USD']
 frequency=['M5']
 init_bal=[1000]
 init_trade_size=[1000]
-grid_pips=[30, 20]
+grid_pips=[30]
 tp_grid_count=[2]
-sl_grid_count=[5]
-trades_for_weightage=[5, 10]
+sl_grid_count=[10]
+trades_for_weightage=[None]
 notrade_margin_percent=[None]
 notrade_count=[None]
-sizing=['dynamic', 'static']
+sizing=['static', 'dynamic']
 cash_out_factor=[None]
 trailing_sl = [True]
 

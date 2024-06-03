@@ -256,23 +256,7 @@ class GridSimulator:
                 trade_size = int(min(trade_size, allowed_trade_size))
             if self.notrade_count is not None and self.notrade_count < self.d.fdata('open_long_count', self.i) + self.d.fdata('open_short_count', self.i):
                 trade_size = 0
-            if self.notrade_margin_percent is None and self.notrade_count is None:
-                allowed_trade_size = max(0, (net_bal / self.MC_PERCENT - margin_used) / (2 * float(self.d.ticker['marginRate'])))
-                trade_size = int(min(trade_size, allowed_trade_size))
-            
-            if self.trades_for_weightage is None:
-                long_trade_size, short_trade_size = trade_size, trade_size
-            else:
-                long_trade_size, short_trade_size = self.weighted_trade_size(trade_size)
-
-        return long_trade_size, short_trade_size
-    
-    def weighted_trade_size(self, trade_size: int):
-        long_trade_size, short_trade_size = trade_size, trade_size
-        if len(self.d.fdata('long_hist', self.i)) == self.trades_for_weightage and len(self.d.fdata('short_hist', self.i)) == self.trades_for_weightage:
-            long_trade_size = int(trade_size * 2 * self.d.fdata('long_profits_ratio', self.i))
-            short_trade_size = int(trade_size * 2 * self.d.fdata('short_profits_ratio', self.i))
-        return long_trade_size, short_trade_size
+        return trade_size
     
     def update_events(self, event):
         events = self.d.fdata('events', self.i) if type(self.d.fdata('events', self.i)) == list else list()
@@ -284,7 +268,7 @@ class GridSimulator:
         direction = 'long' if direction == self.LONG else 'short'
         # opposite_direction = 'short' if direction == self.LONG else 'long'
         # opposite_hist = self.d.fdata(f'{opposite_direction}_hist', self.i)
-        hist = deque(maxlen=self.trades_for_weightage)
+        hist = deque(maxlen=10)
         hist.extend(self.d.fdata(f'{direction}_hist', self.i))
         hist.append(1) if pips > 0 else hist.append(0)
         self.d.update_fdata(f'{direction}_hist', self.i, tuple(hist))
@@ -330,6 +314,13 @@ class GridSimulator:
         )
         self.update_closed_shorts(closed_shorts)
         self.update_hist(pips, self.SHORT)
+    
+    def weighted_trade_size(self, trade_size: int):
+        long_trade_size, short_trade_size = trade_size, trade_size
+        if len(self.d.fdata('long_hist', self.i)) == self.trades_for_weightage and len(self.d.fdata('short_hist', self.i)) == self.trades_for_weightage:
+            long_trade_size = trade_size * 2 * self.d.fdata('long_profits_ratio', self.i)
+            short_trade_size = trade_size * 2 * self.d.fdata('short_profits_ratio', self.i)
+        return long_trade_size, short_trade_size
 
     def entry(self):
         # up_grid = self.d.fdata('mid_c', self.i) >= self.next_up_grid 
@@ -339,43 +330,44 @@ class GridSimulator:
             long_tp = round(trigger + self.tp_pips * pow(10, self.d.ticker['pipLocation']), 5)
             short_tp = round(trigger - self.tp_pips * pow(10, self.d.ticker['pipLocation']), 5)  
 
-            long_trade_size, short_trade_size = self.calc_trade_size()
+            trade_size = self.calc_trade_size()
             open_longs = self.get_open_longs()
             open_shorts = self.get_open_shorts()
             
-            if long_trade_size + short_trade_size == 0:
+            if trade_size == 0:
                 self.update_events(self.EVENT_ENT_FAIL)
             else:
                 self.trade_no = self.trade_no + 1
 
                 long_sl = round(trigger - self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                 short_sl = round(trigger + self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
+                
+                if self.trades_for_weightage is None:
+                    long_trade_size, short_trade_size = trade_size, trade_size
+                else:
+                    long_trade_size, short_trade_size = self.weighted_trade_size(trade_size)
 
-                if long_trade_size > 0:
-                    open_longs[self.trade_no] = dict(
-                        SIZE=long_trade_size,
-                        TRIG=trigger,
-                        ENT=self.d.fdata('ask_c', self.i),
-                        TP=long_tp,
-                        SL=long_sl,
-                        TSL=0
-                    )
-                    self.update_open_longs(open_longs)
-
-                if short_trade_size > 0:
-                    open_shorts[self.trade_no] = dict(
-                        SIZE=short_trade_size,
-                        TRIG=trigger,
-                        ENT=self.d.fdata('bid_c', self.i),
-                        TP=short_tp,
-                        SL=short_sl,
-                        TSL=0
-                    )
-                    self.update_open_shorts(open_shorts)   
-            
-                if long_trade_size + short_trade_size > 0:
-                    self.update_temp_ac_values()
-                    self.update_events(self.EVENT_ENTRY)
+                open_longs[self.trade_no] = dict(
+                    SIZE=long_trade_size,
+                    TRIG=trigger,
+                    ENT=self.d.fdata('ask_c', self.i),
+                    TP=long_tp,
+                    SL=long_sl,
+                    TSL=0
+                )
+                open_shorts[self.trade_no] = dict(
+                    SIZE=short_trade_size,
+                    TRIG=trigger,
+                    ENT=self.d.fdata('bid_c', self.i),
+                    TP=short_tp,
+                    SL=short_sl,
+                    TSL=0
+                )
+                self.update_open_longs(open_longs)
+                self.update_open_shorts(open_shorts)
+                
+                self.update_temp_ac_values()
+                self.update_events(self.EVENT_ENTRY)
             
             # self.next_up_grid = round(trigger + self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
             # self.next_down_grid = round(trigger - self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)  
