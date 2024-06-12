@@ -24,6 +24,9 @@ class GridSimulator:
             grid_pips: int,
             tp_grid_count: int,
             sl_grid_count: int,
+            max_unrealised_pnl: float,
+            max_trades_per_grid: int,
+            max_trades_per_side: int,
             moves_for_weightage: int,
             notrade_margin_percent: float,
             notrade_count: int,
@@ -39,6 +42,9 @@ class GridSimulator:
         self.tp_pips = grid_pips * tp_grid_count
         self.sl_grid_count = sl_grid_count
         self.sl_pips = grid_pips * sl_grid_count
+        self.max_unrealised_pnl = max_unrealised_pnl
+        self.max_trades_per_grid= max_trades_per_grid
+        self.max_trades_per_side = max_trades_per_side
         self.moves_for_weightage = moves_for_weightage
         self.sizing_ratio = init_trade_size / init_bal
         self.notrade_margin_percent = notrade_margin_percent
@@ -55,6 +61,7 @@ class GridSimulator:
         )
 
         add_cols = dict(
+            trigger=float,
             open_longs=object,
             open_shorts=object,
             closed_longs=object,
@@ -69,6 +76,8 @@ class GridSimulator:
             moves_hist=object,
             up_moves_ratio=object,
             down_moves_ratio=object,
+            grid_trades_long=object,
+            grid_trades_short=object,
             unrealised_pnl=float,
             realised_pnl=float,
             ac_bal=float,
@@ -155,7 +164,7 @@ class GridSimulator:
         return round(pnl, 2)
     
     def cash_transfer(self):
-        net_bal, _ = self.current_ac_values()
+        _, net_bal, _ = self.current_ac_values()
         if self.cash_out_factor is not None:
             self.d.update_fdata('cash_bal', self.i, self.d.fdata('cash_bal', self.i-1))
             cash_out_threshold = self.init_bal * self.cash_out_factor
@@ -182,7 +191,7 @@ class GridSimulator:
         margin_used = (self.d.fdata('cum_long_position', self.i) + 
                        self.d.fdata('cum_short_position', self.i)) * float(self.d.ticker['marginRate'])
         net_bal = ac_bal + self.d.fdata('unrealised_pnl', self.i)
-        return net_bal, margin_used      
+        return ac_bal, net_bal, margin_used      
 
     def update_temp_ac_values(self, init: bool=False):
         if init:
@@ -197,6 +206,8 @@ class GridSimulator:
             self.d.update_fdata('moves_hist', self.i, self.d.fdata('moves_hist', self.i-1))
             self.d.update_fdata('up_moves_ratio', self.i, self.d.fdata('up_moves_ratio', self.i-1))
             self.d.update_fdata('down_moves_ratio', self.i, self.d.fdata('down_moves_ratio', self.i-1))
+            self.d.update_fdata('grid_trades_long', self.i, self.d.fdata('grid_trades_long', self.i-1))
+            self.d.update_fdata('grid_trades_short', self.i, self.d.fdata('grid_trades_short', self.i-1))
         else:
             self.d.update_fdata('cum_long_position', self.i, self.cum_long_position())
             self.d.update_fdata('cum_short_position', self.i, self.cum_short_position())
@@ -247,7 +258,7 @@ class GridSimulator:
         if self.i == 0:
             trade_size = self.init_trade_size
         else:
-            net_bal, margin_used = self.current_ac_values()
+            _, net_bal, margin_used = self.current_ac_values()
             trade_size = int(net_bal * self.sizing_ratio) if self.sizing == 'dynamic' else self.init_trade_size
             if self.notrade_margin_percent is not None and self.notrade_count is not None:
                 allowed_trade_size = max(0, (net_bal / self.notrade_margin_percent - margin_used) / (2 * float(self.d.ticker['marginRate'])))
@@ -307,6 +318,16 @@ class GridSimulator:
         self.update_closed_longs(closed_longs)
         # self.update_hist(pips, self.LONG)
 
+        if self.max_trades_per_grid is not None:
+            grid_trades_long = self.d.fdata('grid_trades_long', self.i) \
+                if type(self.d.fdata('grid_trades_long', self.i)) == dict else dict()
+            if grid_trades_long[closing_long['TRIG']] > 1:
+                grid_trades_long[closing_long['TRIG']] = grid_trades_long[closing_long['TRIG']] - 1
+            else:
+                del grid_trades_long[closing_long['TRIG']]
+            self.d.update_fdata('grid_trades_long', self.i, grid_trades_long)
+        
+
     def close_short(self, trade_no: int):
         # Remove from open shorts
         open_shorts = self.get_open_shorts()
@@ -327,54 +348,106 @@ class GridSimulator:
         self.update_closed_shorts(closed_shorts)
         # self.update_hist(pips, self.SHORT)
 
+        if self.max_trades_per_grid is not None:
+            grid_trades_short = self.d.fdata('grid_trades_short', self.i) \
+                if type(self.d.fdata('grid_trades_short', self.i)) == dict else dict()
+            if grid_trades_short[closing_short['TRIG']] > 1:
+                grid_trades_short[closing_short['TRIG']] = grid_trades_short[closing_short['TRIG']] - 1
+            else:
+                del grid_trades_short[closing_short['TRIG']]
+            self.d.update_fdata('grid_trades_short', self.i, grid_trades_short)
+
     def entry(self):
         # up_grid = self.d.fdata('mid_c', self.i) >= self.next_up_grid 
         # down_grid = self.d.fdata('mid_c', self.i) <= self.next_down_grid
+        traded = False
         if self.up_grid or self.down_grid:
-            trigger = self.next_up_grid if self.up_grid else self.next_down_grid
-            long_tp = round(trigger + self.tp_pips * pow(10, self.d.ticker['pipLocation']), 5)
-            short_tp = round(trigger - self.tp_pips * pow(10, self.d.ticker['pipLocation']), 5)  
+            # self.trigger = self.next_up_grid if self.up_grid else self.next_down_grid
+            long_tp = round(self.trigger + self.tp_pips * pow(10, self.d.ticker['pipLocation']), 5)
+            short_tp = round(self.trigger - self.tp_pips * pow(10, self.d.ticker['pipLocation']), 5)  
 
             long_trade_size, short_trade_size = self.calc_trade_size()
             open_longs = self.get_open_longs()
             open_shorts = self.get_open_shorts()
+
+            if self.max_trades_per_grid is not None:
+                grid_trades_long = self.d.fdata('grid_trades_long', self.i) \
+                    if type(self.d.fdata('grid_trades_long', self.i)) == dict else dict()
+                grid_trades_short = self.d.fdata('grid_trades_short', self.i) \
+                    if type(self.d.fdata('grid_trades_short', self.i)) == dict else dict()
             
             if long_trade_size + short_trade_size == 0:
                 self.update_events(self.EVENT_ENT_FAIL)
             else:
                 self.trade_no = self.trade_no + 1
 
-                long_sl = round(trigger - self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                short_sl = round(trigger + self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
+                long_sl = round(self.trigger - self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
+                short_sl = round(self.trigger + self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
 
                 if long_trade_size > 0:
-                    open_longs[self.trade_no] = dict(
-                        SIZE=long_trade_size,
-                        TRIG=trigger,
-                        ENT=self.d.fdata('ask_c', self.i),
-                        TP=long_tp,
-                        SL=long_sl,
-                        TSL=0
-                    )
-                    self.update_open_longs(open_longs)
+                    if self.max_trades_per_grid is not None:
+                        if self.trigger not in grid_trades_long:
+                            grid_trades_long[self.trigger] = 1
+                            trade = True
+                        elif grid_trades_long[self.trigger] < self.max_trades_per_grid:
+                            grid_trades_long[self.trigger] = grid_trades_long[self.trigger] + 1
+                            trade = True
+                        else:
+                            trade = False
+                    else:
+                        trade = True
+
+                    if trade:
+                        open_longs[self.trade_no] = dict(
+                            SIZE=long_trade_size,
+                            TRIG=self.trigger,
+                            ENT=self.d.fdata('ask_c', self.i),
+                            TP=long_tp,
+                            SL=long_sl,
+                            TSL=0
+                        )
+                        self.update_open_longs(open_longs)
+                        if self.max_trades_per_grid is not None:
+                            self.d.update_fdata('grid_trades_long', self.i, grid_trades_long)
+                        traded = True
+                    else:
+                        self.update_events(self.EVENT_ENT_FAIL)
 
                 if short_trade_size > 0:
-                    open_shorts[self.trade_no] = dict(
-                        SIZE=short_trade_size,
-                        TRIG=trigger,
-                        ENT=self.d.fdata('bid_c', self.i),
-                        TP=short_tp,
-                        SL=short_sl,
-                        TSL=0
-                    )
-                    self.update_open_shorts(open_shorts)   
+                    if self.max_trades_per_grid is not None:
+                        if self.trigger not in grid_trades_short:
+                            grid_trades_short[self.trigger] = 1
+                            trade = True
+                        elif grid_trades_short[self.trigger] < self.max_trades_per_grid:
+                            grid_trades_short[self.trigger] = grid_trades_short[self.trigger] + 1
+                            trade = True
+                        else:
+                            trade = False
+                    else:
+                        trade = True
+
+                    if trade:
+                        open_shorts[self.trade_no] = dict(
+                            SIZE=short_trade_size,
+                            TRIG=self.trigger,
+                            ENT=self.d.fdata('bid_c', self.i),
+                            TP=short_tp,
+                            SL=short_sl,
+                            TSL=0
+                        )
+                        self.update_open_shorts(open_shorts)
+                        if self.max_trades_per_grid is not None:
+                            self.d.update_fdata('grid_trades_short', self.i, grid_trades_short)
+                        traded = True
+                    else:
+                        self.update_events(self.EVENT_ENT_FAIL)
             
-                if long_trade_size + short_trade_size > 0:
+                if traded:
                     self.update_temp_ac_values()
                     self.update_events(self.EVENT_ENTRY)
             
-            # self.next_up_grid = round(trigger + self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
-            # self.next_down_grid = round(trigger - self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)  
+            # self.next_up_grid = round(self.trigger + self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
+            # self.next_down_grid = round(self.trigger - self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)  
     
     def take_profit(self):     
         traded = False
@@ -414,15 +487,94 @@ class GridSimulator:
 
         return traded
     
+    def stop_loss_max_unrealised_pnl(self):
+        traded = False
+        price = self.d.fdata('mid_c', self.i)
+        ac_bal, _, _ = self.current_ac_values()
+        while ac_bal * self.max_unrealised_pnl < -self.d.fdata('unrealised_pnl', self.i):
+            farthest_long_price, farthest_short_price = price, price
+            farthest_long, farthest_short = None, None
+            open_longs = self.get_open_longs(self.i)
+            for long, trade in open_longs.items():
+                if trade['ENT'] > farthest_long_price:
+                    farthest_long_price = trade['ENT']
+                    farthest_long = long
+            open_shorts = self.get_open_shorts(self.i)
+            for short, trade in open_shorts.items():
+                if trade['ENT'] < farthest_short_price:
+                    farthest_short_price = trade['ENT']
+                    farthest_short = short
+            if farthest_long == None and farthest_short == None:
+                pass
+            else:
+                if farthest_long == None:
+                    self.close_short(farthest_short)
+                elif farthest_short == None:
+                    self.close_long(farthest_long)
+                else:
+                    if farthest_long_price - price > price - farthest_short_price:
+                        self.close_long(farthest_long)
+                    else:
+                        self.close_short(farthest_short)
+                self.update_temp_ac_values()
+                ac_bal, _, _ = self.current_ac_values()
+                traded = True
+
+        return traded
+    
+    def stop_loss_max_trades(self):
+        traded = False
+        price = self.d.fdata('mid_c', self.i)
+
+        while self.d.fdata('open_long_count', self.i) >= self.max_trades_per_side:
+            farthest_long_price = price
+            farthest_long = None
+            open_longs = self.get_open_longs(self.i)
+            for long, trade in open_longs.items():
+                if trade['ENT'] > farthest_long_price:
+                    farthest_long_price = trade['ENT']
+                    farthest_long = long
+
+            if farthest_long is None:
+                break
+            else:
+                self.close_long(farthest_long)
+                self.update_temp_ac_values()
+                traded = True
+
+        while self.d.fdata('open_short_count', self.i) >= self.max_trades_per_side:
+            farthest_short_price = price
+            farthest_short = None
+            open_shorts = self.get_open_shorts(self.i)
+            for short, trade in open_shorts.items():
+                if trade['ENT'] < farthest_short_price:
+                    farthest_short_price = trade['ENT']
+                    farthest_short = short
+
+            if farthest_short is None:
+                break
+            else:
+                self.close_short(farthest_short)
+                self.update_temp_ac_values()
+                traded = True
+
+        return traded    
+    
     def stop_loss(self):
-        traded = self.stop_loss_grid_count()
+        if self.max_unrealised_pnl is not None:
+            traded = self.stop_loss_max_unrealised_pnl()
+        else:
+            traded = self.stop_loss_grid_count()
+        
+        if self.max_trades_per_side is not None:
+            traded = self.stop_loss_max_trades()
 
         if traded:
             self.update_temp_ac_values()
             self.update_events(self.EVENT_SL)
     
     def margin_call(self):
-        net_bal, margin_used = self.current_ac_values()
+        _, net_bal, margin_used = self.current_ac_values()
         traded = False
         if net_bal < margin_used * self.MC_PERCENT:
             open_longs = self.get_open_longs()
@@ -445,8 +597,10 @@ class GridSimulator:
         open_longs = self.get_open_longs()
         for trade_no, trade in open_longs.items():
             if self.d.fdata('mid_c', self.i) >= trade['TP']:
-                next_tp = round(trade['TP'] + self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                tsl = round(trade['ENT'] + (trade['TP'] - trade['ENT']) / 2, 5) if trade['TSL'] == 0 else trade['TP']               
+                # next_tp = round(trade['TP'] + self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
+                next_tp = self.next_up_grid
+                # tsl = round(trade['ENT'] + (trade['TP'] - trade['ENT']) / 2, 5) if trade['TSL'] == 0 else trade['TP']  
+                tsl = round(next_tp - self.grid_pips * 2 * pow(10, self.d.ticker['pipLocation']), 5)             
                 open_longs[trade_no]['TP'] = next_tp
                 open_longs[trade_no]['TSL'] = tsl
                 adjusted = True
@@ -456,8 +610,10 @@ class GridSimulator:
         open_shorts = self.get_open_shorts()
         for trade_no, trade in open_shorts.items():
             if self.d.fdata('mid_c', self.i) <= trade['TP']:
-                next_tp = round(trade['TP'] - self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                tsl = round(trade['ENT'] - (trade['ENT'] - trade['TP']) / 2, 5) if trade['TSL'] == 0 else trade['TP']
+                # next_tp = round(trade['TP'] - self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
+                next_tp = self.next_down_grid
+                # tsl = round(trade['ENT'] - (trade['ENT'] - trade['TP']) / 2, 5) if trade['TSL'] == 0 else trade['TP']
+                tsl = round(next_tp + self.grid_pips * 2 * pow(10, self.d.ticker['pipLocation']), 5)    
                 open_shorts[trade_no]['TP'] = next_tp
                 open_shorts[trade_no]['TSL'] = tsl
                 adjusted = True
@@ -503,9 +659,19 @@ class GridSimulator:
             self.update_events(self.EVENT_DOWN)
 
         if self.up_grid or self.down_grid:
-            trigger = self.next_up_grid if self.up_grid else self.next_down_grid
-            self.next_up_grid = round(trigger + self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
-            self.next_down_grid = round(trigger - self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)  
+            up_pips = round((self.d.fdata('mid_c',  self.i) - self.next_up_grid) * pow(10, -self.d.ticker['pipLocation']), 1)
+            down_pips = round((self.next_down_grid - self.d.fdata('mid_c',  self.i)) * pow(10, -self.d.ticker['pipLocation']), 1)
+            up_grids = int(up_pips / self.grid_pips) if self.i > 1 else 0
+            down_grids = int(down_pips / self.grid_pips) if self.i > 1 else 0
+            if self.up_grid:
+                self.trigger = round(self.next_up_grid + up_grids * self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
+            else:
+                self.trigger = round(self.next_down_grid - down_grids * self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
+            # self.trigger = self.next_up_grid if self.up_grid else self.next_down_grid
+            self.next_up_grid = round(self.trigger + self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
+            self.next_down_grid = round(self.trigger - self.grid_pips * pow(10, self.d.ticker['pipLocation']), 5)
+
+            self.d.update_fdata('trigger', self.i, self.trigger)
         
         self.update_moves_hist()
     
@@ -518,13 +684,14 @@ class GridSimulator:
                 self.update_temp_ac_values(init=True)
                 self.next_grid()
                 self.margin_call()
-                if self.trailing_sl:
-                    self.update_trailing_sl()
-                self.stop_loss()
-                if self.trailing_sl:
-                    self.take_profit_tsl()
-                else:
-                    self.take_profit()
+                if self.up_grid or self.down_grid:
+                    if self.trailing_sl:
+                        self.update_trailing_sl()
+                    self.stop_loss()
+                    if self.trailing_sl:
+                        self.take_profit_tsl()
+                    else:
+                        self.take_profit()
+                    self.entry()
                 self.cash_transfer()
-                self.entry()
             self.update_ac_values()

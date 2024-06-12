@@ -18,6 +18,9 @@ class GridOptimizer:
             grid_pips: list,
             tp_grid_count: list,
             sl_grid_count: list,
+            max_unrealised_pnl: list,
+            max_trades_per_grid: list,
+            max_trades_per_side: list,
             moves_for_weightage: list,
             notrade_margin_percent: list,
             notrade_count: list,
@@ -43,6 +46,9 @@ class GridOptimizer:
         self.grid_pips = grid_pips
         self.tp_grid_count = tp_grid_count
         self.sl_grid_count = sl_grid_count
+        self.max_unrealised_pnl = max_unrealised_pnl
+        self.max_trades_per_grid = max_trades_per_grid
+        self.max_trades_per_side = max_trades_per_side
         self.moves_for_weightage = moves_for_weightage
         self.notrade_margin_percent = notrade_margin_percent
         self.notrade_count = notrade_count
@@ -69,6 +75,9 @@ class GridOptimizer:
                 grid_pips = self.grid_pips,
                 tp_grid_count = self.tp_grid_count,
                 sl_grid_count = self.sl_grid_count,
+                max_unrealised_pnl = self.max_unrealised_pnl,
+                max_trades_per_grid = self.max_trades_per_grid,
+                max_trades_per_side = self.max_trades_per_side,
                 moves_for_weightage = self.moves_for_weightage,
                 notrade_margin_percent = self.notrade_margin_percent,
                 notrade_count = self.notrade_count,
@@ -126,6 +135,9 @@ class GridOptimizer:
                     grid_pips: int,
                     tp_grid_count: int,
                     sl_grid_count: int,
+                    max_unrealised_pnl: float,
+                    max_trades_per_grid: int,
+                    max_trades_per_side: int,
                     moves_for_weightage: int,
                     notrade_margin_percent: float,
                     notrade_count: int,
@@ -145,6 +157,9 @@ class GridOptimizer:
             grid_pips=grid_pips,
             tp_grid_count=tp_grid_count,
             sl_grid_count=sl_grid_count,
+            max_unrealised_pnl=max_unrealised_pnl,
+            max_trades_per_grid=max_trades_per_grid,
+            max_trades_per_side=max_trades_per_side,
             moves_for_weightage=moves_for_weightage,
             notrade_margin_percent=notrade_margin_percent,
             notrade_count=notrade_count,
@@ -156,8 +171,8 @@ class GridOptimizer:
         def inputs_list():
             gross_bal = self.sim.d.df[self.sim.name].iloc[-1]['gross_bal']
             start, end = self.sim.d.df[self.sim.name].iloc[0]['time'], self.sim.d.df[self.sim.name].iloc[-1]['time']
-            header = ['sim_name', 'start', 'end', 'init_bal', 'init_trade_size', 'grid_pips', 'tp_grid_count', 'sl_grid_count', 'moves_for_weightage', 'notrade_margin_percent', 'notrade_count', 'sizing', 'cash_out_factor', 'trailing_sl', 'gross_bal']
-            inputs = [sim_name, start, end, init_bal, init_trade_size, grid_pips, tp_grid_count, sl_grid_count, moves_for_weightage, notrade_margin_percent, notrade_count, sizing, cash_out_factor, trailing_sl, gross_bal]
+            header = ['sim_name', 'start', 'end', 'init_bal', 'init_trade_size', 'grid_pips', 'tp_grid_count', 'sl_grid_count', 'max_unrealised_pnl', 'max_trades_per_grid', 'max_trades_per_side', 'moves_for_weightage', 'notrade_margin_percent', 'notrade_count', 'sizing', 'cash_out_factor', 'trailing_sl', 'gross_bal']
+            inputs = [sim_name, start, end, init_bal, init_trade_size, grid_pips, tp_grid_count, sl_grid_count, max_unrealised_pnl, max_trades_per_grid, max_trades_per_side, moves_for_weightage, notrade_margin_percent, notrade_count, sizing, cash_out_factor, trailing_sl, gross_bal]
             print(tabulate([inputs], header, tablefmt='plain'))
             self.inputs_list.append(inputs)
             return pd.DataFrame(self.inputs_list, columns=header)
@@ -184,26 +199,32 @@ class GridOptimizer:
                                         for ntc in self.notrade_count:
                                             for tpgc in self.tp_grid_count:
                                                 for slgc in self.sl_grid_count:
-                                                    for mw in self.moves_for_weightage:
-                                                        for tsl in self.trailing_sl:
-                                                            if self.counter >= self.checkpoint:
-                                                                if not self.dummyrun:
-                                                                    self.process_sim(
-                                                                        df=df,
-                                                                        ticker=tk,
-                                                                        frequency=f,
-                                                                        init_bal=ib,
-                                                                        init_trade_size=t,
-                                                                        grid_pips=g,
-                                                                        tp_grid_count=tpgc,
-                                                                        sl_grid_count=slgc,
-                                                                        moves_for_weightage=mw,
-                                                                        notrade_margin_percent=ntsp,
-                                                                        notrade_count=ntc,
-                                                                        sizing=s,
-                                                                        cash_out_factor=c,
-                                                                        trailing_sl=tsl
-                                                                    )  
-                                                            self.counter =  self.counter + 1
+                                                    for mupnl in self.max_unrealised_pnl:
+                                                        for mtg in self.max_trades_per_grid:
+                                                            for mts in self.max_trades_per_side:
+                                                                for mw in self.moves_for_weightage:
+                                                                    for tsl in self.trailing_sl:
+                                                                        if self.counter >= self.checkpoint:
+                                                                            if not self.dummyrun:
+                                                                                self.process_sim(
+                                                                                    df=df,
+                                                                                    ticker=tk,
+                                                                                    frequency=f,
+                                                                                    init_bal=ib,
+                                                                                    init_trade_size=t,
+                                                                                    grid_pips=g,
+                                                                                    tp_grid_count=tpgc,
+                                                                                    sl_grid_count=slgc,
+                                                                                    max_unrealised_pnl=mupnl,
+                                                                                    max_trades_per_grid=mtg,
+                                                                                    max_trades_per_side=mts,
+                                                                                    moves_for_weightage=mw,
+                                                                                    notrade_margin_percent=ntsp,
+                                                                                    notrade_count=ntc,
+                                                                                    sizing=s,
+                                                                                    cash_out_factor=c,
+                                                                                    trailing_sl=tsl
+                                                                                )  
+                                                                        self.counter =  self.counter + 1
         if self.dummyrun:
             print(f'{self.counter-1} dummies run successfully')
