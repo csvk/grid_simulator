@@ -296,7 +296,7 @@ class GridSimulator:
         self.update_open_longs(open_longs)
 
         # Append to closed longs
-        pips = round((self.d.fdata('ask_c',  self.i) - closing_long['ENT']) * pow(10, -self.d.ticker['pipLocation']), 1)
+        pips = round((self.d.fdata('bid_c',  self.i) - closing_long['ENT']) * pow(10, -self.d.ticker['pipLocation']), 1)
         closed_longs = self.get_closed_longs()
         # closed_longs[trade_no] = (closing_long['SIZE'], closing_long['ENT'], self.d.fdata('bid_c',  self.i), round(pips, 1)) # (SIZE, ENTRY, EXIT, PIPS)
         closed_longs[trade_no] = dict(
@@ -327,7 +327,7 @@ class GridSimulator:
         self.update_open_shorts(open_shorts)
 
         # Append to closed shorts
-        pips = round((closing_short['ENT'] - self.d.fdata('bid_c',  self.i)) * pow(10, -self.d.ticker['pipLocation']), 1)
+        pips = round((closing_short['ENT'] - self.d.fdata('ask_c',  self.i)) * pow(10, -self.d.ticker['pipLocation']), 1)
         closed_shorts = self.get_closed_shorts()
         closed_shorts[trade_no] = dict(
             SIZE=closing_short['SIZE'],
