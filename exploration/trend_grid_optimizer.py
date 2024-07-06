@@ -1,4 +1,4 @@
-from stepped_grid_simulator import GridSimulator
+from trend_grid_simulator import GridSimulator
 from tabulate import tabulate
 import pandas as pd
 
@@ -18,7 +18,10 @@ class GridOptimizer:
             grid_pips: list,
             tp_grid_count: list,
             sl_grid_count: list,
-            cov_grid_count: list,
+            pyr_grid_count: list,
+            pyr_change_grid_count: list,
+            pyramid_size_factor: list,
+            moves_for_direction: list,
             sizing: list,
             cash_out_factor: list,
             trailing_sl: list,
@@ -41,7 +44,10 @@ class GridOptimizer:
         self.grid_pips = grid_pips
         self.tp_grid_count = tp_grid_count
         self.sl_grid_count = sl_grid_count
-        self.cov_grid_count= cov_grid_count
+        self.pyr_grid_count = pyr_grid_count
+        self.pyr_change_grid_count = pyr_change_grid_count
+        self.pyramid_size_factor = pyramid_size_factor
+        self.moves_for_direction = moves_for_direction
         self.sizing = sizing
         self.cash_out_factor = cash_out_factor
         self.trailing_sl= trailing_sl
@@ -65,7 +71,10 @@ class GridOptimizer:
                 grid_pips = self.grid_pips,
                 tp_grid_count = self.tp_grid_count,
                 sl_grid_count = self.sl_grid_count,
-                cov_grid_count = self.cov_grid_count,
+                pyr_grid_count = self.pyr_grid_count,
+                pyr_change_grid_count = self.pyr_change_grid_count,
+                pyramid_size_factor = self.pyramid_size_factor,
+                moves_for_direction = self.moves_for_direction,
                 sizing = self.sizing,
                 cash_out_factor = self.cash_out_factor,
                 trailing_sl = self.trailing_sl,
@@ -120,7 +129,10 @@ class GridOptimizer:
                     grid_pips: int,
                     tp_grid_count: int,
                     sl_grid_count: int,
-                    cov_grid_count: int,
+                    pyr_grid_count: int,
+                    pyr_change_grid_count: int,
+                    pyramid_size_factor: tuple,
+                    moves_for_direction: int,
                     sizing: str,
                     cash_out_factor: float,
                     trailing_sl: float):
@@ -137,7 +149,10 @@ class GridOptimizer:
             grid_pips=grid_pips,
             tp_grid_count=tp_grid_count,
             sl_grid_count=sl_grid_count,
-            cov_grid_count=cov_grid_count,
+            pyr_grid_count=pyr_grid_count,
+            pyr_change_grid_count=pyr_change_grid_count,
+            pyramid_size_factor=pyramid_size_factor,
+            moves_for_direction=moves_for_direction,
             sizing=sizing,
             cash_out_factor=cash_out_factor,
             trailing_sl=trailing_sl
@@ -146,8 +161,8 @@ class GridOptimizer:
         def inputs_list():
             gross_bal = self.sim.d.df[self.sim.name].iloc[-1]['gross_bal']
             start, end = self.sim.d.df[self.sim.name].iloc[0]['time'], self.sim.d.df[self.sim.name].iloc[-1]['time']
-            header = ['sim_name', 'start', 'end', 'init_bal', 'init_trade_size', 'grid_pips', 'tp_grid_count', 'sl_grid_count', 'cov_grid_count', 'sizing', 'cash_out_factor', 'trailing_sl', 'gross_bal']
-            inputs = [sim_name, start, end, init_bal, init_trade_size, grid_pips, tp_grid_count, sl_grid_count, cov_grid_count, sizing, cash_out_factor, trailing_sl, gross_bal]
+            header = ['sim_name', 'start', 'end', 'init_bal', 'init_trade_size', 'grid_pips', 'tp_grid_count', 'sl_grid_count', 'pyr_grid_count', 'pyr_change_grid_count', 'pyramid_size_factor', 'moves_for_direction', 'sizing', 'cash_out_factor', 'trailing_sl', 'gross_bal']
+            inputs = [sim_name, start, end, init_bal, init_trade_size, grid_pips, tp_grid_count, sl_grid_count, pyr_grid_count, pyr_change_grid_count, pyramid_size_factor, moves_for_direction, sizing, cash_out_factor, trailing_sl, gross_bal]
             print(tabulate([inputs], header, tablefmt='plain'))
             self.inputs_list.append(inputs)
             return pd.DataFrame(self.inputs_list, columns=header)
@@ -171,24 +186,30 @@ class GridOptimizer:
                                 for c in self.cash_out_factor:
                                     for tpgc in self.tp_grid_count:
                                         for slgc in self.sl_grid_count:
-                                            for cgc in self.cov_grid_count:
-                                                for tsl in self.trailing_sl:
-                                                    if self.counter >= self.checkpoint:
-                                                        if not self.dummyrun:
-                                                            self.process_sim(
-                                                                df=df,
-                                                                ticker=tk,
-                                                                frequency=f,
-                                                                init_bal=ib,
-                                                                init_trade_size=t,
-                                                                grid_pips=g,
-                                                                tp_grid_count=tpgc,
-                                                                sl_grid_count=slgc,
-                                                                cov_grid_count=cgc,
-                                                                sizing=s,
-                                                                cash_out_factor=c,
-                                                                trailing_sl=tsl
-                                                            )  
-                                                    self.counter =  self.counter + 1
+                                            for pgc in self.pyr_grid_count:
+                                                for pcgc in self.pyr_change_grid_count:
+                                                    for psf in self.pyramid_size_factor:
+                                                        for mw in self.moves_for_direction:
+                                                            for tsl in self.trailing_sl:
+                                                                if self.counter >= self.checkpoint:
+                                                                    if not self.dummyrun:
+                                                                        self.process_sim(
+                                                                            df=df,
+                                                                            ticker=tk,
+                                                                            frequency=f,
+                                                                            init_bal=ib,
+                                                                            init_trade_size=t,
+                                                                            grid_pips=g,
+                                                                            tp_grid_count=tpgc,
+                                                                            sl_grid_count=slgc,
+                                                                            pyr_grid_count=pgc,
+                                                                            pyr_change_grid_count=pcgc,
+                                                                            pyramid_size_factor=psf,
+                                                                            moves_for_direction=mw,
+                                                                            sizing=s,
+                                                                            cash_out_factor=c,
+                                                                            trailing_sl=tsl
+                                                                        )  
+                                                                self.counter =  self.counter + 1
         if self.dummyrun:
             print(f'{self.counter-1} dummies run successfully')

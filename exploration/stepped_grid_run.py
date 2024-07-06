@@ -6,10 +6,10 @@ instruments = "../data/instruments.json"
 
 dummyrun = False
 checkpoint=0
-counter=40
+counter=200
 inputs_file=f'inputs.{counter}.csv'
-start=0
-end=20000
+start=None
+end=None
 records=['events']
 tickers=['EUR_USD']
 frequency=['M5']
@@ -19,7 +19,7 @@ grid_pips=[20]
 tp_grid_count=[2] 
 sl_grid_count=[10]
 cov_grid_count=[1000]
-sizing=['dynamic', 'static']
+sizing=['static']
 cash_out_factor=[None]
 trailing_sl = [True]
 

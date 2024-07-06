@@ -637,18 +637,18 @@ class GridSimulator:
             if self.i == 0:
                 self.update_init_values()
             else:
-                self.update_temp_ac_values(init=True)
+                # self.update_temp_ac_values(init=True)
                 self.next_grid()
-                self.margin_call()
-                if self.up_grid or self.down_grid:
-                    if self.trailing_sl:
-                        self.update_trailing_sl()
-                    if self.trailing_sl:
-                        self.take_profit_tsl()
-                    else:
-                        self.take_profit()
-                    self.stop_loss()
-                    self.cover_entry()
-                    self.entry()
-                self.cash_transfer()
-            self.update_ac_values()
+            #     self.margin_call()
+            #     if self.up_grid or self.down_grid:
+            #         if self.trailing_sl:
+            #             self.update_trailing_sl()
+            #         if self.trailing_sl:
+            #             self.take_profit_tsl()
+            #         else:
+            #             self.take_profit()
+            #         self.stop_loss()
+            #         self.cover_entry()
+            #         self.entry()
+            #     self.cash_transfer()
+            # self.update_ac_values()
