@@ -1,6 +1,8 @@
 from parallel_martingale_grid_simulator import GridSimulator
 from tabulate import tabulate
 import pandas as pd
+import threading
+import json
 
 class GridOptimizer:
 
@@ -227,3 +229,6 @@ class GridOptimizer:
                                                                         self.counter =  self.counter + 1
         if self.dummyrun:
             print(f'{self.counter-1} dummies run successfully')
+
+    def execute(self):
+        self.run_optimizer()

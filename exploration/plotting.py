@@ -4,22 +4,37 @@ from plotly.subplots import make_subplots
 
 class CandlePlot:
 
-    def __init__(self, df, candles=True, log=False):
+    def __init__(self, df, candles=True, heiken_ashi=False, log=False):
         self.df_plot = df.copy()
         self.candles = candles
-        self.create_candle_fig(log)
+        self.heiken_ashi = heiken_ashi
+        self.log = log
+        self.create_candle_fig()
 
     def add_timestr(self):
         # self.df_plot['sTime'] = [dt.datetime.strftime(x, "s%y-%m-%d %H:%M") 
         #                 for x in self.df_plot.time]
         self.df_plot['sTime'] = [f'{str(dt)}' for dt in self.df_plot.time]
-
-    def create_candle_fig(self, log=False):
+    
+    def create_candle_fig(self):
         self.add_timestr()
         self.fig = make_subplots(specs=[[{"secondary_y": True}]])
-        if log:
+        if self.log:
             self.fig.update_yaxes(type='log')
-        if self.candles == True:
+        if self.heiken_ashi:
+            self.fig.add_trace(go.Candlestick(
+                x=self.df_plot.sTime,
+                open=self.df_plot.ha_o,
+                high=self.df_plot.ha_h,
+                low=self.df_plot.ha_l,
+                close=self.df_plot.ha_c,
+                line=dict(width=1), opacity=1,
+                increasing_fillcolor='#24A06B',
+                decreasing_fillcolor="#CC2E3C",
+                increasing_line_color='#2EC886',  
+                decreasing_line_color='#FF3A4C'
+            ))
+        if self.candles and not self.heiken_ashi:
             self.fig.add_trace(go.Candlestick(
                 x=self.df_plot.sTime,
                 open=self.df_plot.mid_o,

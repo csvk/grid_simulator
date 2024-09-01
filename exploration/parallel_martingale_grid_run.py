@@ -6,7 +6,7 @@ instruments = "../data/instruments.json"
 
 dummyrun = False
 checkpoint=0
-counter=2
+counter=115
 inputs_file=f'inputs.{counter}.csv'
 start=None
 end=None
@@ -21,8 +21,8 @@ sl_grid_count=[2]
 pyr_grid_count=[1000]
 pyr_change_grid_count=[None]
 pyramid_size_factor=[(0.50,)] # using tuple to handle pyramid size change
-martingale_count=[10]
-martingale_depth=[10]
+martingale_count=[30]
+martingale_depth=[5]
 martingale_cushion=[1.10]
 sizing=['dynamicmax']
 cash_out_factor=[None]
@@ -60,4 +60,4 @@ if __name__ == '__main__':
 
     print(optim)
 
-    optim.run_optimizer()
+    optim.execute()

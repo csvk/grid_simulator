@@ -11,8 +11,8 @@ class GridSimulator:
     EVENT_ENT_FAIL, EVENT_MARTINGALE_ENT_FAIL, EVENT_MARTINGALE_SCALE_FAIL = 'EFAIL', 'MFAIL', 'MSCALEFAIL'
     EVENT_CASH_IN, EVENT_CASH_OUT =  'CI', 'CO'
     EVENT_UP, EVENT_DOWN = 'UP', 'DN'
-    OPEN_KEYS = ('SIZE', 'TRIG', 'ENT', 'TP', 'SL', 'TSL', 'PYR')
-    CLOSED_KEYS = ('SIZE', 'TRIG', 'ENT', 'EXIT', 'PAR', 'PIPS')
+    OPEN_KEYS = ('SIZE', 'ENT', 'TP', 'SL', 'TSL', 'TYP')
+    CLOSED_KEYS = ('SIZE', 'ENT', 'EXIT', 'PAR', 'PIPS')
     LONG, SHORT = 1, -1
     INIT_PYR, CHANGE_PYR = 0, 1
     MARTINGALE_SCALE, MARTINGALE_LOSS, MARTINGALE_INIT = 0 , 1, (1, 0) 
@@ -269,6 +269,7 @@ class GridSimulator:
         martingale_loss = martingale[self.MARTINGALE_LOSS]
         if martingale_loss != 0:
             martingale_size = round(martingale_loss * self.martingale_cushion / (self.tp_pips * pow(10, self.d.ticker['pipLocation'])), 0)
+            orig_trade_size = trade_size
             trade_size = max(trade_size, martingale_size)
             self.martingale_trade = True
         else:
@@ -277,12 +278,22 @@ class GridSimulator:
         margin_required = trade_size * float(self.d.ticker['marginRate'])
         _, net_bal, margin_used = self.current_ac_values()
         if net_bal < (margin_used + margin_required) * self.MC_PERCENT:
-            trade_size = 0
             if self.martingale_trade:
                 self.update_events(self.EVENT_MARTINGALE_ENT_FAIL)
             else:
                 self.update_events(self.EVENT_ENT_FAIL)
-
+            if self.sizing == 'dynamicmax':
+                self.max_gross_bal = self.d.fdata('gross_bal', self.i-1)
+                # trade_size = self.calc_trade_size()
+            if self.martingale_trade:
+                trade_size = orig_trade_size
+                margin_required = trade_size * float(self.d.ticker['marginRate'])
+                if net_bal < (margin_used + margin_required) * self.MC_PERCENT:
+                    trade_size = 0
+                    raise 'Margin call'
+            else:
+                trade_size = 0
+                raise 'Margin call'
         return trade_size
     
     def update_events(self, event):
@@ -304,7 +315,7 @@ class GridSimulator:
         # closed_longs[trade_no] = (closing_long['SIZE'], closing_long['ENT'], self.d.fdata('bid_c',  self.i), round(pips, 1)) # (SIZE, ENTRY, EXIT, PIPS)
         closed_longs[trade_no] = dict(
             SIZE=closing_long['SIZE'],
-            TRIG=closing_long['TRIG'],
+            # TRIG=closing_long['TRIG'],
             ENT=closing_long['ENT'],
             EXIT=self.d.fdata('bid_c',  self.i),
             PIPS=pips
@@ -323,7 +334,7 @@ class GridSimulator:
         closed_shorts = self.get_closed_shorts()
         closed_shorts[trade_no] = dict(
             SIZE=closing_short['SIZE'],
-            TRIG=closing_short['TRIG'],
+            # TRIG=closing_short['TRIG'],
             ENT=closing_short['ENT'],
             EXIT=self.d.fdata('ask_c',  self.i),
             PIPS=pips
@@ -347,39 +358,42 @@ class GridSimulator:
             if trade_size > 0:
                 self.trade_no = self.trade_no + 1
                 
-                long_tp = round(self.trigger + self.tp_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                short_tp = round(self.trigger - self.tp_pips * pow(10, self.d.ticker['pipLocation']), 5) 
-
-                long_sl = round(self.trigger - self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                short_sl = round(self.trigger + self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
-
-                long_pyr = 0 if self.martingale_trade else round(self.trigger + self.pyr_pips * pow(10, self.d.ticker['pipLocation']), 5)
-                short_pyr = 0 if self.martingale_trade else round(self.trigger - self.pyr_pips * pow(10, self.d.ticker['pipLocation']), 5) 
+                # long_pyr = 0 if self.martingale_trade else round(self.trigger + self.pyr_pips * pow(10, self.d.ticker['pipLocation']), 5)
+                # short_pyr = 0 if self.martingale_trade else round(self.trigger - self.pyr_pips * pow(10, self.d.ticker['pipLocation']), 5) 
+                ent_type = self.EVENT_MARTINGALE_ENTRY if self.martingale_trade else self.EVENT_ENTRY 
 
                 # if long_trade_size > 0 and len(open_longs) == 0:
                 if dir == self.LONG:
+                    self.trigger = self.d.fdata('ask_c', self.i)
+                    long_tp = round(self.trigger + self.tp_pips * pow(10, self.d.ticker['pipLocation']), 5)
+                    long_sl = round(self.trigger - self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                     open_longs[self.trade_no] = dict(
                         SIZE=trade_size,
-                        TRIG=self.trigger,
+                        # TRIG=self.trigger,
                         ENT=self.d.fdata('ask_c', self.i),
                         TP=long_tp,
                         SL=long_sl,
                         TSL=0,
-                        PYR=long_pyr
+                        # PYR=long_pyr
+                        TYP=ent_type
                     )
                     self.update_open_longs(open_longs)
                     traded = True
 
                 # if short_trade_size > 0 and len(open_shorts) == 0:
                 if dir == self.SHORT:
+                    self.trigger = self.d.fdata('bid_c', self.i)
+                    short_tp = round(self.trigger - self.tp_pips * pow(10, self.d.ticker['pipLocation']), 5)  
+                    short_sl = round(self.trigger + self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                     open_shorts[self.trade_no] = dict(
                         SIZE=trade_size,
-                        TRIG=self.trigger,
+                        # TRIG=self.trigger,
                         ENT=self.d.fdata('bid_c', self.i),
                         TP=short_tp,
                         SL=short_sl,
                         TSL=0,
-                        PYR=short_pyr
+                        # PYR=short_pyr
+                        TYP=ent_type
                     )
                     self.update_open_shorts(open_shorts)
                     traded = True
@@ -410,7 +424,7 @@ class GridSimulator:
                 long_sl = round(self.trigger - self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                 open_longs[self.trade_no] = dict(
                     SIZE=trade_size,
-                    TRIG=self.trigger,
+                    # TRIG=self.trigger,
                     ENT=self.d.fdata('ask_c', self.i),
                     TP=long_tp,
                     SL=long_sl,
@@ -438,7 +452,7 @@ class GridSimulator:
                 short_sl = round(self.trigger + self.sl_pips * pow(10, self.d.ticker['pipLocation']), 5)
                 open_shorts[self.trade_no] = dict(
                     SIZE=trade_size,
-                    TRIG=self.trigger,
+                    # TRIG=self.trigger,
                     ENT=self.d.fdata('bid_c', self.i),
                     TP=short_tp,
                     SL=short_sl,
@@ -520,7 +534,7 @@ class GridSimulator:
         open_longs = self.get_open_longs()
         if len(open_longs) > 0:
             parent = next(iter(open_longs.values()))
-            if self.d.fdata('bid_c', self.i) >= parent['TP'] and parent['PYR'] != 0:
+            if self.d.fdata('bid_c', self.i) >= parent['TP'] and parent['TYP'] == self.EVENT_ENTRY:
                 next_tp = self.next_up_grid
                 tsl = round(next_tp - self.grid_pips * 2 * pow(10, self.d.ticker['pipLocation']), 5)             
                 for trade_no, trade in open_longs.items():
@@ -533,7 +547,7 @@ class GridSimulator:
         open_shorts = self.get_open_shorts()
         if len(open_shorts) > 0:
             parent = next(iter(open_shorts.values()))
-            if self.d.fdata('ask_c', self.i) <= parent['TP'] and parent['PYR'] != 0:
+            if self.d.fdata('ask_c', self.i) <= parent['TP'] and parent['TYP'] == self.EVENT_ENTRY:
                 next_tp = self.next_down_grid
                 tsl = round(next_tp + self.grid_pips * 2 * pow(10, self.d.ticker['pipLocation']), 5) 
                 for trade_no, trade in open_shorts.items():   
@@ -573,16 +587,20 @@ class GridSimulator:
         pnl = self.d.fdata('realised_pnl', self.i)
         if pnl != 0:
             martingale = self.d.fdata(f'martingale_{self.martingale_counter}', self.i)
-            if martingale[self.MARTINGALE_SCALE] < self.martingale_depth or pnl > 0:
+            if pnl > 0:
                 self.d.update_fdata(f'martingale_{self.martingale_counter}', self.i, self.MARTINGALE_INIT)
             if pnl < 0:
-                martingale = (martingale[self.MARTINGALE_SCALE] + 1, martingale[self.MARTINGALE_LOSS] - pnl)
-                self.d.update_fdata(f'martingale_{self.martingale_counter}', self.i, martingale)
+                if martingale[self.MARTINGALE_SCALE] == self.martingale_depth:
+                    self.d.update_fdata(f'martingale_{self.martingale_counter}', self.i, self.MARTINGALE_INIT)
+                    self.update_events(self.EVENT_MARTINGALE_SCALE_FAIL)
+                else:
+                    martingale = (martingale[self.MARTINGALE_SCALE] + 1, martingale[self.MARTINGALE_LOSS] - pnl)
+                    self.d.update_fdata(f'martingale_{self.martingale_counter}', self.i, martingale)
             if self.martingale_counter < self.martingale_count:
                 self.martingale_counter = self.martingale_counter + 1
             else:
                 self.martingale_counter = 1
-                self.update_events(self.EVENT_MARTINGALE_SCALE_FAIL)
+                
 
     def update_init_values(self):
         self.trade_no = 0
@@ -656,7 +674,7 @@ class GridSimulator:
                 self.take_profit()
                 self.stop_loss()
                 self.update_martingale()
-                self.pyramid_entry()
+                # self.pyramid_entry()
                 self.entry()
                 self.cash_transfer()
             self.update_ac_values()

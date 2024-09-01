@@ -125,8 +125,8 @@ def run_collection(ic: InstrumentCollection, api: OandaApi):
                     collect_data(
                         pair,
                         granularity,
-                        "2016-01-01T00:00:00Z",
-                        "2023-12-31T00:00:00Z",
+                        "2024-01-01T00:00:00Z",
+                        "2023-01-02T00:00:00Z",
                         "./data/",
                         api
                     )
